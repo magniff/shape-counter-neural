@@ -1,4 +1,5 @@
 # Shape Counter
+<img width="2558" height="1773" alt="image" src="https://github.com/user-attachments/assets/3a5fe440-f528-4f21-9595-1578bfca98dd" />
 
 A CNN that counts circles and squares in 64×64 black-and-white images. All shapes are **outlines only** — 1px Bresenham-rasterised borders, no fills. Squares can be rotated to any angle. The network outputs two numbers: how many circles and how many squares are in the image.
 

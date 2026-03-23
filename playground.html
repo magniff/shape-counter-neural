@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shape Counter — Inference Playground</title>
+<style>
+  /* No external font imports — works from file:// without CORS issues. */
+
+  :root {
+    --bg: #0c0c0e;
+    --surface: #161619;
+    --surface2: #1e1e23;
+    --border: #2a2a30;
+    --border-hi: #3a3a44;
+    --text: #e0dfe4;
+    --text-dim: #8886a0;
+    --accent: #6ee7b7;
+    --accent-dim: #2d6e55;
+    --warn: #f59e0b;
+    --err: #ef4444;
+    --circle-color: #60a5fa;
+    --square-color: #f472b6;
+    --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Liberation Mono', monospace;
+    --font-sans: 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', 'Arial', sans-serif;
+    --pixel-scale: 8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+    background: linear-gradient(135deg, var(--accent), var(--circle-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    margin-bottom: 1.5rem;
+  }
+
+  .app {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* ── Left panel: canvas + tools ── */
+  .canvas-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .canvas-wrapper {
+    position: relative;
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: crosshair;
+    background: #000;
+    image-rendering: pixelated;
+  }
+
+  #draw-canvas {
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  /* Ghost overlay for previewing shape while dragging */
+  #ghost-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    image-rendering: pixelated;
+  }
+
+  .tools {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .tool-btn {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.45rem 0.9rem;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+
+  .tool-btn:hover { border-color: var(--border-hi); color: var(--text); }
+  .tool-btn.active-circle { border-color: var(--circle-color); color: var(--circle-color); background: rgba(96,165,250,0.08); }
+  .tool-btn.active-square { border-color: var(--square-color); color: var(--square-color); background: rgba(244,114,182,0.08); }
+  .tool-btn.active-eraser { border-color: var(--warn); color: var(--warn); background: rgba(245,158,11,0.08); }
+  .tool-btn.accent-btn { border-color: var(--accent-dim); color: var(--accent); }
+  .tool-btn.accent-btn:hover { background: rgba(110,231,183,0.08); border-color: var(--accent); }
+  .tool-btn.danger-btn { border-color: #7f1d1d; color: var(--err); }
+  .tool-btn.danger-btn:hover { background: rgba(239,68,68,0.08); border-color: var(--err); }
+
+  .status-bar {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    min-height: 1.2em;
+    padding: 0.25rem 0;
+  }
+
+  /* ── Right panel: model + results ── */
+  .info-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 280px;
+    max-width: 340px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+  }
+
+  .card h2 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 0.6rem;
+  }
+
+  .model-status {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    background: var(--surface2);
+    margin-bottom: 0.6rem;
+  }
+
+  .model-status.loaded { color: var(--accent); }
+  .model-status.empty { color: var(--text-dim); }
+
+  .result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .result-row:last-child { border-bottom: none; }
+
+  .result-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .result-label.circles { color: var(--circle-color); }
+  .result-label.squares { color: var(--square-color); }
+
+  .result-value {
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+  }
+
+  .result-value.circles { color: var(--circle-color); }
+  .result-value.squares { color: var(--square-color); }
+
+  .result-raw {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-top: 0.15rem;
+  }
+
+  .inference-time {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-top: 0.3rem;
+  }
+
+  .no-model-msg {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 0.5rem 0;
+  }
+
+  .key-hint {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-top: 0.5rem;
+  }
+
+  .key-hint kbd {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.6rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>Shape Counter Playground</h1>
+<p class="subtitle">draw on the 64×64 canvas · load your burn model · run inference</p>
+
+<div class="app">
+  <!-- Left: Canvas + Drawing Tools -->
+  <div class="canvas-panel">
+    <div class="canvas-wrapper" id="canvas-wrapper">
+      <canvas id="draw-canvas" width="512" height="512"></canvas>
+      <canvas id="ghost-canvas" width="512" height="512"></canvas>
+    </div>
+
+    <div class="tools">
+      <button class="tool-btn active-circle" id="btn-circle" onclick="setTool('circle')">⊚ Circle</button>
+      <button class="tool-btn" id="btn-square" onclick="setTool('square')">◻ Square</button>
+      <button class="tool-btn" id="btn-eraser" onclick="setTool('eraser')">⌫ Eraser</button>
+      <div style="flex:1"></div>
+      <button class="tool-btn danger-btn" onclick="clearCanvas()">Clear</button>
+    </div>
+
+    <div class="status-bar" id="status-bar">Click &amp; drag to draw a circle</div>
+
+    <div class="key-hint">
+      <kbd>C</kbd> circle &nbsp; <kbd>S</kbd> square &nbsp; <kbd>E</kbd> eraser &nbsp; <kbd>Space</kbd> run &nbsp; <kbd>Esc</kbd> cancel
+    </div>
+  </div>
+
+  <!-- Right: Model + Results -->
+  <div class="info-panel">
+    <div class="card">
+      <h2>Model</h2>
+      <div class="model-status empty" id="model-status">no model loaded</div>
+      <input type="file" id="model-file-input" accept=".json" style="display:none" onchange="loadModelFile(this.files[0])">
+      <button class="tool-btn accent-btn" onclick="document.getElementById('model-file-input').click()">Load Model JSON</button>
+    </div>
+
+    <div class="card">
+      <h2>Prediction</h2>
+      <div id="results-container">
+        <div class="no-model-msg" id="no-model-msg">Load a model and draw some shapes.</div>
+        <div id="results-display" style="display:none">
+          <div class="result-row">
+            <span class="result-label circles">Circles</span>
+            <div>
+              <div class="result-value circles" id="pred-circles">—</div>
+              <div class="result-raw" id="pred-circles-raw"></div>
+            </div>
+          </div>
+          <div class="result-row">
+            <span class="result-label squares">Squares</span>
+            <div>
+              <div class="result-value squares" id="pred-squares">—</div>
+              <div class="result-raw" id="pred-squares-raw"></div>
+            </div>
+          </div>
+          <div class="inference-time" id="inference-time"></div>
+        </div>
+      </div>
+    </div>
+
+    <button class="tool-btn" style="width:100%;padding:0.6rem;margin-top:0.25rem" onclick="generateTestImage()">🧪 Test: 3 circles, 2 squares</button>
+    <button class="tool-btn" style="width:100%;padding:0.6rem;margin-top:0.25rem" onclick="generateHeavyTest()">🧪 Heavy: 10 circles, 8 squares</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. Drawing state
+// ═══════════════════════════════════════════════════════════════════════════
+
+const GRID = 64;
+const SCALE = 8;  // each logical pixel = 8 screen pixels
+const drawCanvas = document.getElementById('draw-canvas');
+const ghostCanvas = document.getElementById('ghost-canvas');
+const drawCtx = drawCanvas.getContext('2d');
+const ghostCtx = ghostCanvas.getContext('2d');
+const statusBar = document.getElementById('status-bar');
+
+// The logical 64×64 pixel grid (0 or 1).
+const pixels = new Float32Array(GRID * GRID);
+
+let currentTool = 'circle'; // 'circle' | 'square' | 'eraser'
+// Drawing interaction state machine:
+//   idle → dragging → (for square) rotating → idle
+//   idle → dragging → (for circle) release → idle
+//   idle → dragging → (for eraser) release → idle
+let drawState = 'idle';
+let dragStart = null;   // {x, y} in logical coords
+let dragEnd = null;
+let squareAngle = 0;
+
+// Auto-run inference whenever the canvas changes (if model is loaded).
+// Debounced for eraser to avoid running on every pixel.
+let _inferTimer = null;
+function autoInfer() {
+  if (!model) return;
+  clearTimeout(_inferTimer);
+  _inferTimer = setTimeout(runInference, 30);
+}
+
+// ── Coordinate helpers ───────────────────────────────────────────────────
+
+function screenToLogical(e) {
+  const rect = drawCanvas.getBoundingClientRect();
+  const sx = (e.clientX - rect.left) / rect.width * GRID;
+  const sy = (e.clientY - rect.top) / rect.height * GRID;
+  return { x: Math.max(0, Math.min(GRID - 1, sx)), y: Math.max(0, Math.min(GRID - 1, sy)) };
+}
+
+// ── Render logical pixels to canvas ──────────────────────────────────────
+
+function renderPixels() {
+  const img = drawCtx.createImageData(GRID, GRID);
+  for (let i = 0; i < GRID * GRID; i++) {
+    const v = pixels[i] > 0 ? 255 : 0;
+    img.data[i * 4 + 0] = v;
+    img.data[i * 4 + 1] = v;
+    img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 255;
+  }
+  // Draw to a tiny offscreen canvas, then scale up.
+  const tmp = new OffscreenCanvas(GRID, GRID);
+  const tc = tmp.getContext('2d');
+  tc.putImageData(img, 0, 0);
+  drawCtx.imageSmoothingEnabled = false;
+  drawCtx.drawImage(tmp, 0, 0, GRID * SCALE, GRID * SCALE);
+}
+
+function clearGhost() {
+  ghostCtx.clearRect(0, 0, GRID * SCALE, GRID * SCALE);
+}
+
+// ── Shape rasterisation (same algorithms as the Rust code) ───────────────
+
+function setPixel(x, y) {
+  const ix = Math.round(x);
+  const iy = Math.round(y);
+  if (ix >= 0 && ix < GRID && iy >= 0 && iy < GRID) {
+    pixels[iy * GRID + ix] = 1.0;
+  }
+}
+
+function erasePixel(x, y, radius) {
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const ix = Math.round(x + dx);
+      const iy = Math.round(y + dy);
+      if (ix >= 0 && ix < GRID && iy >= 0 && iy < GRID) {
+        pixels[iy * GRID + ix] = 0.0;
+      }
+    }
+  }
+}
+
+function drawCircle(cx, cy, r) {
+  // Bresenham midpoint circle — outline only
+  let x = r, y = 0, err = 1 - r;
+  while (x >= y) {
+    setPixel(cx + x, cy + y); setPixel(cx - x, cy + y);
+    setPixel(cx + x, cy - y); setPixel(cx - x, cy - y);
+    setPixel(cx + y, cy + x); setPixel(cx - y, cy + x);
+    setPixel(cx + y, cy - x); setPixel(cx - y, cy - x);
+    y++;
+    if (err < 0) { err += 2 * y + 1; }
+    else { x--; err += 2 * (y - x) + 1; }
+  }
+}
+
+function drawRotatedSquare(cx, cy, halfSide, angle) {
+  // Outline only — 4 Bresenham lines connecting rotated corners.
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const local = [[-halfSide,-halfSide],[halfSide,-halfSide],[halfSide,halfSide],[-halfSide,halfSide]];
+  const corners = local.map(([lx,ly]) => [
+    Math.round(lx*cosA - ly*sinA + cx),
+    Math.round(lx*sinA + ly*cosA + cy)
+  ]);
+  for (let i = 0; i < 4; i++) {
+    bresenhamLine(corners[i][0], corners[i][1], corners[(i+1)%4][0], corners[(i+1)%4][1]);
+  }
+}
+
+function bresenhamLine(x0, y0, x1, y1) {
+  x0 = Math.round(x0); y0 = Math.round(y0);
+  x1 = Math.round(x1); y1 = Math.round(y1);
+  const dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  while (true) {
+    setPixel(x0, y0);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 < dx) { err += dx; y0 += sy; }
+  }
+}
+
+// ── Ghost preview (drawn on the overlay canvas in color) ─────────────────
+
+function drawGhostCircle(cx, cy, r) {
+  clearGhost();
+  ghostCtx.strokeStyle = 'rgba(96,165,250,0.6)';
+  ghostCtx.lineWidth = 2;
+  ghostCtx.beginPath();
+  ghostCtx.arc(cx * SCALE + SCALE/2, cy * SCALE + SCALE/2, r * SCALE, 0, Math.PI * 2);
+  ghostCtx.stroke();
+}
+
+function drawGhostSquare(cx, cy, halfSide, angle) {
+  clearGhost();
+  ghostCtx.strokeStyle = 'rgba(244,114,182,0.6)';
+  ghostCtx.lineWidth = 2;
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const local = [[-halfSide,-halfSide],[halfSide,-halfSide],[halfSide,halfSide],[-halfSide,halfSide]];
+  const corners = local.map(([lx,ly]) => [
+    (lx*cosA - ly*sinA + cx) * SCALE + SCALE/2,
+    (lx*sinA + ly*cosA + cy) * SCALE + SCALE/2
+  ]);
+  ghostCtx.beginPath();
+  ghostCtx.moveTo(corners[0][0], corners[0][1]);
+  for (let i = 1; i < 4; i++) ghostCtx.lineTo(corners[i][0], corners[i][1]);
+  ghostCtx.closePath();
+  ghostCtx.stroke();
+}
+
+// ── Interaction handlers ─────────────────────────────────────────────────
+
+const wrapper = document.getElementById('canvas-wrapper');
+
+wrapper.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const p = screenToLogical(e);
+
+  if (drawState === 'rotating') {
+    // Commit the square
+    commitSquare();
+    return;
+  }
+
+  drawState = 'dragging';
+  dragStart = p;
+  dragEnd = p;
+
+  if (currentTool === 'eraser') {
+    erasePixel(p.x, p.y, 2);
+    renderPixels();
+  }
+});
+
+wrapper.addEventListener('mousemove', e => {
+  const p = screenToLogical(e);
+
+  if (drawState === 'dragging') {
+    dragEnd = p;
+    if (currentTool === 'circle') {
+      const r = Math.round(Math.hypot(p.x - dragStart.x, p.y - dragStart.y));
+      drawGhostCircle(dragStart.x, dragStart.y, r);
+      statusBar.textContent = `circle: center=(${dragStart.x.toFixed(0)},${dragStart.y.toFixed(0)}) r=${r}`;
+    } else if (currentTool === 'square') {
+      const halfSide = Math.max(Math.abs(p.x - dragStart.x), Math.abs(p.y - dragStart.y));
+      drawGhostSquare(dragStart.x, dragStart.y, halfSide, 0);
+      statusBar.textContent = `square: center=(${dragStart.x.toFixed(0)},${dragStart.y.toFixed(0)}) half=${halfSide.toFixed(1)} — release to set rotation`;
+    } else if (currentTool === 'eraser') {
+      erasePixel(p.x, p.y, 2);
+      renderPixels();
+    }
+  } else if (drawState === 'rotating') {
+    const angle = Math.atan2(p.y - dragStart.y, p.x - dragStart.x);
+    squareAngle = angle;
+    drawGhostSquare(dragStart.x, dragStart.y, squareHalfSide, angle);
+    statusBar.textContent = `square: rotating — angle=${(angle * 180 / Math.PI).toFixed(1)}° — click to commit`;
+  } else {
+    // idle — show coordinates
+    statusBar.textContent = `(${p.x.toFixed(0)}, ${p.y.toFixed(0)})`;
+  }
+});
+
+let squareHalfSide = 0;
+
+wrapper.addEventListener('mouseup', e => {
+  if (drawState !== 'dragging') return;
+  const p = screenToLogical(e);
+
+  if (currentTool === 'circle') {
+    const r = Math.round(Math.hypot(p.x - dragStart.x, p.y - dragStart.y));
+    if (r >= 2) {
+      drawCircle(Math.round(dragStart.x), Math.round(dragStart.y), r);
+    }
+    renderPixels();
+    clearGhost();
+    drawState = 'idle';
+    statusBar.textContent = 'Circle placed. Click & drag for another.';
+    autoInfer();
+  } else if (currentTool === 'square') {
+    squareHalfSide = Math.max(Math.abs(p.x - dragStart.x), Math.abs(p.y - dragStart.y));
+    if (squareHalfSide < 2) {
+      drawState = 'idle';
+      clearGhost();
+      return;
+    }
+    squareAngle = 0;
+    drawState = 'rotating';
+    statusBar.textContent = 'Move mouse to rotate — click to commit';
+  } else if (currentTool === 'eraser') {
+    drawState = 'idle';
+    statusBar.textContent = 'Eraser done.';
+    autoInfer();
+  }
+});
+
+function commitSquare() {
+  drawRotatedSquare(dragStart.x, dragStart.y, squareHalfSide, squareAngle);
+  renderPixels();
+  clearGhost();
+  drawState = 'idle';
+  statusBar.textContent = 'Square placed. Click & drag for another.';
+  autoInfer();
+}
+
+// Cancel with Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (drawState === 'dragging' || drawState === 'rotating') {
+      drawState = 'idle';
+      clearGhost();
+      statusBar.textContent = 'Cancelled.';
+    }
+  }
+  if (e.key === 'c' || e.key === 'C') setTool('circle');
+  if (e.key === 's' && !e.ctrlKey && !e.metaKey) setTool('square');
+  if (e.key === 'e' || e.key === 'E') setTool('eraser');
+  if (e.key === ' ') { e.preventDefault(); runInference(); }
+});
+
+function setTool(tool) {
+  if (drawState === 'rotating') { commitSquare(); }
+  currentTool = tool;
+  document.getElementById('btn-circle').className = 'tool-btn' + (tool === 'circle' ? ' active-circle' : '');
+  document.getElementById('btn-square').className = 'tool-btn' + (tool === 'square' ? ' active-square' : '');
+  document.getElementById('btn-eraser').className = 'tool-btn' + (tool === 'eraser' ? ' active-eraser' : '');
+  const msgs = { circle: 'Click & drag to draw a circle', square: 'Click & drag size, then move to rotate, click to commit', eraser: 'Click & drag to erase' };
+  statusBar.textContent = msgs[tool];
+}
+
+function clearCanvas() {
+  pixels.fill(0);
+  renderPixels();
+  clearGhost();
+  drawState = 'idle';
+  statusBar.textContent = 'Canvas cleared.';
+  autoInfer();
+}
+
+// Initial render
+renderPixels();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. Model loading — parse Burn's PrettyJsonFileRecorder output
+// ═══════════════════════════════════════════════════════════════════════════
+
+let model = null;  // Will hold parsed weight tensors
+
+function loadModelFile(file) {
+  if (!file) return;
+  console.log('Loading model file:', file.name, file.size, 'bytes');
+  document.getElementById('model-status').textContent = `loading ${file.name}…`;
+  document.getElementById('model-status').className = 'model-status empty';
+  statusBar.textContent = 'Reading model file…';
+
+  const reader = new FileReader();
+  reader.onerror = function(e) {
+    console.error('FileReader error:', e);
+    alert('Failed to read file: ' + reader.error);
+    document.getElementById('model-status').textContent = 'read failed';
+  };
+  reader.onload = function(e) {
+    console.log('File read complete, parsing JSON…');
+    let json;
+    try { json = JSON.parse(e.target.result); } catch (err) {
+      console.error('JSON parse error:', err);
+      alert('Invalid JSON: ' + err.message);
+      document.getElementById('model-status').textContent = 'parse failed';
+      return;
+    }
+    console.log('JSON parsed, top-level keys:', Object.keys(json));
+    parseAndSetModel(json);
+  };
+  reader.readAsText(file);
+}
+
+function parseAndSetModel(json) {
+  loadModelFromJSON(json);
+}
+
+// Recursively extract all weight tensors from the burn JSON.
+//
+// Burn's PrettyJsonFileRecorder (FullPrecisionSettings) serializes each
+// tensor as two sibling keys:
+//   "weight": { "bytes": [u8, u8, ...], "shape": [dim0, dim1, ...] }
+//
+// The "bytes" array contains the raw little-endian IEEE 754 float32
+// representation — 4 bytes per element.  We decode them into Float32Arrays.
+
+function extractWeights(obj, prefix) {
+  const result = {};
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return result;
+
+  for (const key of Object.keys(obj)) {
+    if (key === 'metadata' || key === '_b') continue;
+    const val = obj[key];
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+      // Case 1: direct tensor node { bytes: [...], shape: [...] }
+      if (Array.isArray(val.bytes) && Array.isArray(val.shape)) {
+        result[path] = decodeBytesToFloat32(val.bytes);
+      }
+      // Case 2: param wrapper { id: "...", param: { bytes: [...], shape: [...] } }
+      else if (val.param && typeof val.param === 'object' &&
+               Array.isArray(val.param.bytes) && Array.isArray(val.param.shape)) {
+        result[path] = decodeBytesToFloat32(val.param.bytes);
+      }
+      // Case 3: nested module — recurse
+      else {
+        Object.assign(result, extractWeights(val, path));
+      }
+    }
+  }
+  return result;
+}
+
+// Decode an array of u8 values (little-endian IEEE 754) into Float32Array.
+// Every 4 consecutive bytes form one f32.
+function decodeBytesToFloat32(bytes) {
+  const numFloats = bytes.length / 4;
+  const buffer = new ArrayBuffer(bytes.length);
+  const u8view = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i++) {
+    u8view[i] = bytes[i];
+  }
+  return new Float32Array(buffer);
+}
+
+function loadModelFromJSON(json) {
+  // Called by parseAndSetModel after parsing.
+  // Burn wraps everything in { metadata: {...}, item: {...} }
+  const root = json.item || json;
+  const weights = extractWeights(root, '');
+
+  // Verify we got the expected keys
+  const expected = [
+    'block1.conv.weight', 'block1.bn.gamma', 'block1.bn.beta',
+    'block1.bn.running_mean', 'block1.bn.running_var',
+    'block2.conv.weight', 'block2.bn.gamma', 'block2.bn.beta',
+    'block2.bn.running_mean', 'block2.bn.running_var',
+    'block3.conv.weight', 'block3.bn.gamma', 'block3.bn.beta',
+    'block3.bn.running_mean', 'block3.bn.running_var',
+    'block4.conv.weight', 'block4.bn.gamma', 'block4.bn.beta',
+    'block4.bn.running_mean', 'block4.bn.running_var',
+    'fc1.weight', 'fc1.bias',
+    'fc2.weight', 'fc2.bias',
+    'fc3.weight', 'fc3.bias',
+  ];
+
+  const keys = Object.keys(weights);
+  console.log(`Extracted ${keys.length} weight keys:`, keys);
+  for (const k of keys) {
+    const first5 = Array.from(weights[k].slice(0, 5)).map(v => v.toFixed(6));
+    console.log(`  ${k}: [${weights[k].length} floats] first5: ${first5}`);
+  }
+
+  const missing = expected.filter(k => !keys.some(wk => wk.includes(k)));
+  if (missing.length > 0) {
+    alert(`Missing weights: ${missing.join(', ')}\n\nFound keys: ${keys.slice(0, 20).join(', ')}...`);
+    document.getElementById('model-status').textContent = 'load failed — missing weights';
+    return;
+  }
+
+  // Build structured model object — find keys by suffix matching
+  function w(suffix) {
+    const key = keys.find(k => k.endsWith(suffix));
+    if (!key) throw new Error(`Weight not found: ${suffix}`);
+    return weights[key];
+  }
+
+  model = {
+    block1: { conv_w: w('block1.conv.weight'), bn_gamma: w('block1.bn.gamma'), bn_beta: w('block1.bn.beta'), bn_mean: w('block1.bn.running_mean'), bn_var: w('block1.bn.running_var') },
+    block2: { conv_w: w('block2.conv.weight'), bn_gamma: w('block2.bn.gamma'), bn_beta: w('block2.bn.beta'), bn_mean: w('block2.bn.running_mean'), bn_var: w('block2.bn.running_var') },
+    block3: { conv_w: w('block3.conv.weight'), bn_gamma: w('block3.bn.gamma'), bn_beta: w('block3.bn.beta'), bn_mean: w('block3.bn.running_mean'), bn_var: w('block3.bn.running_var') },
+    block4: { conv_w: w('block4.conv.weight'), bn_gamma: w('block4.bn.gamma'), bn_beta: w('block4.bn.beta'), bn_mean: w('block4.bn.running_mean'), bn_var: w('block4.bn.running_var') },
+    fc1_w: w('fc1.weight'), fc1_b: w('fc1.bias'),
+    fc2_w: w('fc2.weight'), fc2_b: w('fc2.bias'),
+    fc3_w: w('fc3.weight'), fc3_b: w('fc3.bias'),
+  };
+
+  const paramCount = Object.values(weights).reduce((s, w) => s + w.length, 0);
+  document.getElementById('model-status').textContent = `✓ loaded — ${paramCount.toLocaleString()} parameters`;
+  document.getElementById('model-status').className = 'model-status loaded';
+  statusBar.textContent = 'Model loaded — inference runs automatically as you draw.';
+
+  // Immediately run inference on whatever is on the canvas right now.
+  runInference();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. CNN Forward Pass — pure JavaScript, single-threaded
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// This mirrors the Rust model exactly:
+//   4× ConvBlock(Conv2d 3×3 pad=1, no bias → BN → ReLU → MaxPool 2×2)
+//   → AdaptiveAvgPool to 1×1
+//   → Linear(256,128) → ReLU → Linear(128,64) → ReLU → Linear(64,2)
+//
+// Tensor layout: [C, H, W] (no batch dim — we process one image).
+// Stored as flat Float32Array with channel-major indexing:
+//   index(c, y, x) = c * H * W + y * W + x
+
+function conv2d_3x3_pad1(input, weight, inC, outC, H, W) {
+  // weight shape: [outC, inC, 3, 3], stored flat.
+  // output shape: [outC, H, W] (same spatial size due to pad=1).
+  const out = new Float32Array(outC * H * W);
+
+  for (let oc = 0; oc < outC; oc++) {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        let sum = 0;
+        for (let ic = 0; ic < inC; ic++) {
+          for (let ky = 0; ky < 3; ky++) {
+            for (let kx = 0; kx < 3; kx++) {
+              const iy = y + ky - 1;
+              const ix = x + kx - 1;
+              if (iy >= 0 && iy < H && ix >= 0 && ix < W) {
+                const wIdx = ((oc * inC + ic) * 3 + ky) * 3 + kx;
+                const iIdx = ic * H * W + iy * W + ix;
+                sum += weight[wIdx] * input[iIdx];
+              }
+            }
+          }
+        }
+        out[oc * H * W + y * W + x] = sum;
+      }
+    }
+  }
+  return out;
+}
+
+function batchnorm(input, gamma, beta, mean, variance, C, H, W) {
+  // BN inference: out = gamma * (x - mean) / sqrt(var + eps) + beta
+  const eps = 1e-5;
+  const out = new Float32Array(C * H * W);
+  for (let c = 0; c < C; c++) {
+    const g = gamma[c];
+    const b = beta[c];
+    const m = mean[c];
+    const invStd = 1.0 / Math.sqrt(variance[c] + eps);
+    const offset = c * H * W;
+    for (let i = 0; i < H * W; i++) {
+      out[offset + i] = g * (input[offset + i] - m) * invStd + b;
+    }
+  }
+  return out;
+}
+
+function relu(arr) {
+  const out = new Float32Array(arr.length);
+  for (let i = 0; i < arr.length; i++) out[i] = arr[i] > 0 ? arr[i] : 0;
+  return out;
+}
+
+function maxpool2x2(input, C, H, W) {
+  const oH = H >> 1, oW = W >> 1;
+  const out = new Float32Array(C * oH * oW);
+  for (let c = 0; c < C; c++) {
+    for (let y = 0; y < oH; y++) {
+      for (let x = 0; x < oW; x++) {
+        const base = c * H * W;
+        const a = input[base + (y*2)*W + x*2];
+        const b = input[base + (y*2)*W + x*2+1];
+        const cc = input[base + (y*2+1)*W + x*2];
+        const d = input[base + (y*2+1)*W + x*2+1];
+        out[c * oH * oW + y * oW + x] = Math.max(a, b, cc, d);
+      }
+    }
+  }
+  return out;
+}
+
+function globalAvgPool(input, C, H, W) {
+  const out = new Float32Array(C);
+  const n = H * W;
+  for (let c = 0; c < C; c++) {
+    let sum = 0;
+    const off = c * n;
+    for (let i = 0; i < n; i++) sum += input[off + i];
+    out[c] = sum / n;
+  }
+  return out;
+}
+
+function linear(input, weight, bias, inF, outF) {
+  // Burn stores Linear weights as [d_input, d_output].
+  // Forward: y[o] = sum_i(x[i] * W[i * outF + o]) + b[o]
+  const out = new Float32Array(outF);
+  for (let o = 0; o < outF; o++) {
+    let sum = bias[o];
+    for (let i = 0; i < inF; i++) {
+      sum += input[i] * weight[i * outF + o];
+    }
+    out[o] = sum;
+  }
+  return out;
+}
+
+function convBlock(input, block, inC, outC, H, W) {
+  let x = conv2d_3x3_pad1(input, block.conv_w, inC, outC, H, W);
+  x = batchnorm(x, block.bn_gamma, block.bn_beta, block.bn_mean, block.bn_var, outC, H, W);
+  x = relu(x);
+  x = maxpool2x2(x, outC, H, W);
+  return x;
+}
+
+function forward(pixelData) {
+  const nonzero = pixelData.reduce((s, v) => s + (v > 0 ? 1 : 0), 0);
+  console.log(`Forward pass: ${nonzero} nonzero pixels out of ${GRID*GRID}`);
+
+  let x = pixelData;  // [1, 64, 64]
+  x = convBlock(x, model.block1, 1,   64,  64, 64);  // → [64, 32, 32]
+  x = convBlock(x, model.block2, 64,  128, 32, 32);  // → [128, 16, 16]
+  x = convBlock(x, model.block3, 128, 128, 16, 16);  // → [128, 8, 8]
+  x = convBlock(x, model.block4, 128, 128,  8,  8);  // → [128, 4, 4]
+
+  x = globalAvgPool(x, 128, 4, 4);  // → [128]
+
+  x = linear(x, model.fc1_w, model.fc1_b, 128, 128);
+  x = relu(x);
+  x = linear(x, model.fc2_w, model.fc2_b, 128, 64);
+  x = relu(x);
+  x = linear(x, model.fc3_w, model.fc3_b, 64, 2);
+
+  console.log(`  output: circles=${x[0].toFixed(4)} squares=${x[1].toFixed(4)}`);
+  return { circles: x[0], squares: x[1] };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. Run inference
+// ═══════════════════════════════════════════════════════════════════════════
+
+function runInference() {
+  if (!model) {
+    statusBar.textContent = 'No model loaded — click "Load Model JSON" first.';
+    return;
+  }
+
+  const t0 = performance.now();
+  const result = forward(pixels);
+  const dt = performance.now() - t0;
+
+  document.getElementById('no-model-msg').style.display = 'none';
+  document.getElementById('results-display').style.display = 'block';
+
+  document.getElementById('pred-circles').textContent = Math.max(0, Math.round(result.circles));
+  document.getElementById('pred-squares').textContent = Math.max(0, Math.round(result.squares));
+  document.getElementById('pred-circles-raw').textContent = `raw: ${result.circles.toFixed(4)}`;
+  document.getElementById('pred-squares-raw').textContent = `raw: ${result.squares.toFixed(4)}`;
+  document.getElementById('inference-time').textContent = `inference: ${dt.toFixed(1)} ms`;
+
+  statusBar.textContent = `Inference complete — ${dt.toFixed(1)} ms`;
+}
+
+// Generate a deterministic test image with known shapes, identical to
+// what the Rust training code would produce. This lets you verify the
+// JS forward pass matches the Rust one.
+function generateTestImage() {
+  pixels.fill(0);
+
+  // 3 circles (outline only, Bresenham)
+  drawCircle(16, 16, 10);
+  drawCircle(45, 20, 8);
+  drawCircle(30, 48, 12);
+
+  // 2 rotated squares (outline only, 4 Bresenham lines)
+  drawRotatedSquare(20, 35, 7, 0.5);
+  drawRotatedSquare(50, 45, 9, 1.2);
+
+  renderPixels();
+  const nonzero = pixels.reduce((s, v) => s + (v > 0 ? 1 : 0), 0);
+  console.log(`Test image: ${nonzero} nonzero pixels. Expected: 3 circles, 2 squares`);
+  statusBar.textContent = `Test image: 3 circles, 2 squares (${nonzero} px). Expected ~3, ~2`;
+  if (model) runInference();
+}
+
+function generateHeavyTest() {
+  pixels.fill(0);
+  // 10 circles
+  const circs = [[10,10,6],[20,8,5],[35,12,7],[50,10,8],[12,30,9],
+                 [40,30,6],[55,28,7],[25,50,8],[45,52,6],[8,50,5]];
+  for (const [cx,cy,r] of circs) drawCircle(cx, cy, r);
+  // 8 squares
+  const sqs = [[15,20,5,0.3],[30,25,6,0.8],[48,18,5,1.5],[10,42,7,0.1],
+               [35,40,6,2.0],[52,38,5,0.6],[20,55,4,1.0],[42,55,6,2.5]];
+  for (const [cx,cy,hs,a] of sqs) drawRotatedSquare(cx, cy, hs, a);
+  renderPixels();
+  const nonzero = pixels.reduce((s, v) => s + (v > 0 ? 1 : 0), 0);
+  console.log(`Heavy test: ${nonzero} nonzero pixels. Expected: 10 circles, 8 squares`);
+  statusBar.textContent = `Heavy test: 10 circles, 8 squares (${nonzero} px). Expected ~10, ~8`;
+  if (model) runInference();
+}
+</script>
+</body>
+</html>

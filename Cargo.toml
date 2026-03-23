@@ -1,0 +1,20 @@
+[package]
+name = "shape-counter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Burn with CUDA backend + autodiff for training.
+# The "cuda" feature pulls in burn-cuda which compiles CubeCL kernels for NVIDIA GPUs.
+# "fusion" enables automatic kernel fusion on the CUDA backend (fuses elementwise ops
+# into fewer kernel launches — fewer PCIe round-trips, better SM occupancy).
+# "std" is needed for file I/O, threading, etc.
+burn = { version = "0.20", default-features = false, features = [
+    "std",
+    "cuda",
+    "fusion",
+    "autodiff",
+] }
+
+# We generate training images procedurally — `rand` for RNG, no image crate needed.
+rand = "0.8"

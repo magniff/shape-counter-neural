@@ -23,25 +23,6 @@ Key difficulties:
 - **Scale variation** — small and large shapes coexist in the same image
 - **High density** — up to 15 circles + 15 squares on a 64×64 canvas
 
-## Architecture
-
-```
-Input: [B, 1, 64, 64]
-
-Conv2d(1→64, 3×3, pad=1)   → BatchNorm → ReLU → MaxPool(2×2)    → [B, 64, 32, 32]
-Conv2d(64→128, 3×3, pad=1)  → BatchNorm → ReLU → MaxPool(2×2)    → [B, 128, 16, 16]
-Conv2d(128→128, 3×3, pad=1) → BatchNorm → ReLU → MaxPool(2×2)    → [B, 128, 8, 8]
-Conv2d(128→128, 3×3, pad=1) → BatchNorm → ReLU → MaxPool(2×2)    → [B, 128, 4, 4]
-
-AdaptiveAvgPool2d(1×1) → [B, 128]
-
-Linear(128→128) → ReLU → Dropout(0.3)
-Linear(128→64)  → ReLU → Dropout(0.3)
-Linear(64→2)    → output: [num_circles, num_squares]
-```
-
-~650K parameters. Fits entirely in L2 cache on any modern GPU.
-
 ## Training
 
 Everything lives in a single `src/main.rs`. No dataset files, no preprocessing — training data is generated procedurally at each batch using Bresenham circle and line rasterisers.
@@ -71,23 +52,6 @@ Everything lives in a single `src/main.rs`. No dataset files, no preprocessing �
 cd shape-counter
 cargo run --release
 ```
-
-The training loop prints per-epoch stats and sample predictions at each checkpoint:
-
-```
-Epoch  47/120 | train_loss: 0.312 | val_loss: 0.298 | val_MAE(circles): 0.24 | val_MAE(squares): 0.31
-  ★ New best! val_loss 0.298
-  ┌─────────────────────────────────────────────────────────┐
-  │  Sample predictions (10 images)                        │
-  ├──────┬──────────────────┬──────────────────┬───────────┤
-  │  #   │  GT (circ, sq)    │  Pred (circ, sq) │   Error   │
-  │   1  │  ( 6,  9)          │  ( 6.29,  8.63)   │ (0.29,0.37) │
-  │   2  │  (12,  8)          │  (11.48,  8.63)   │ (0.52,0.63) │
-  ...
-  → Best checkpoint saved: checkpoints/shape_counter_best.json
-```
-
-Checkpoints are saved as pretty-printed JSON via burn's `PrettyJsonFileRecorder<FullPrecisionSettings>`. The JSON contains all model weights as raw byte arrays with shape metadata — about 20–30 MB per file.
 
 ## Playground
 
@@ -134,7 +98,7 @@ shape-counter/
 │   └── main.rs         # model, data generation, training loop — everything
 ├── playground.html     # browser inference playground (standalone)
 └── checkpoints/        # created at runtime
-    └── shape_counter_best.json
+    └── model_snaphost_N.json
 ```
 
 ## Notes
